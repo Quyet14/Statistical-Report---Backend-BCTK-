@@ -30,11 +30,13 @@ export class DepartmentsController {
   }
 
   @Post()
+  @Roles('admin')
   create(@Body() dto: { name: string; branchId?: number }) {
     return this.departmentsService.create(dto);
   }
 
   @Patch(':id')
+  @Roles('admin')
   update(
     @Param('id') id: string,
     @Body() dto: { name?: string; branchId?: number },
@@ -43,6 +45,7 @@ export class DepartmentsController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   remove(@Param('id') id: string) {
     return this.departmentsService.remove(+id);
   }

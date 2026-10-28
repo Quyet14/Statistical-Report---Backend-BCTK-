@@ -1,10 +1,18 @@
-import { ConflictException, Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserEntity } from './entities/user.entity';
+import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -44,6 +52,95 @@ export class UsersService implements OnModuleInit {
 
   findAll() {
     return this.usersRepository.find();
+  }
+
+  findVisible(viewer: AuthenticatedUser) {
+    if (viewer.role === 'admin') return this.findAll();
+    const where =
+      viewer.role === 'manager' && viewer.departmentId != null
+        ? { departmentId: viewer.departmentId }
+        : { id: viewer.id };
+    return this.usersRepository.find({ where, order: { name: 'ASC' } });
+  }
+
+  findManaged(viewer: AuthenticatedUser) {
+    if (viewer.role === 'admin') return this.findAll();
+    if (viewer.role !== 'manager')
+      throw new ForbiddenException('Bạn không có quyền quản lý nhân viên');
+    if (viewer.departmentId == null) return Promise.resolve([]);
+    return this.usersRepository.find({
+      where: { departmentId: viewer.departmentId, role: 'staff' },
+      order: { name: 'ASC' },
+    });
+  }
+
+  async findVisibleOne(id: number, viewer: AuthenticatedUser) {
+    const user = await this.findOne(id);
+    if (!user) throw new NotFoundException('Không tìm thấy tài khoản');
+    if (
+      viewer.role === 'admin' ||
+      viewer.id === id ||
+      (viewer.role === 'manager' &&
+        viewer.departmentId != null &&
+        user.departmentId != null &&
+        Number(user.departmentId) === Number(viewer.departmentId))
+    )
+      return user;
+    throw new ForbiddenException('Bạn không có quyền xem tài khoản này');
+  }
+
+  async updateInDepartment(
+    id: number,
+    dto: UpdateUserDto,
+    viewer: AuthenticatedUser,
+  ) {
+    if (viewer.role !== 'manager' || viewer.departmentId == null)
+      throw new ForbiddenException('Bạn không có quyền quản lý tài khoản này');
+    const keys = Object.keys(dto);
+    if (keys.some((key) => !['name', 'email', 'isActive'].includes(key)))
+      throw new ForbiddenException(
+        'Trưởng khoa chỉ được sửa họ tên, email và trạng thái nhân viên',
+      );
+    if (!keys.length)
+      throw new BadRequestException('Chưa có thông tin cập nhật');
+    if (
+      keys.includes('name') &&
+      (typeof dto.name !== 'string' || !dto.name.trim())
+    )
+      throw new BadRequestException('Họ tên không hợp lệ');
+    if (
+      keys.includes('email') &&
+      (typeof dto.email !== 'string' ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dto.email))
+    )
+      throw new BadRequestException('Email không hợp lệ');
+    if (keys.includes('isActive') && typeof dto.isActive !== 'boolean')
+      throw new BadRequestException('Trạng thái tài khoản không hợp lệ');
+    const scope = {
+      id,
+      departmentId: viewer.departmentId,
+      role: 'staff' as const,
+    };
+    const user = await this.usersRepository.findOneBy(scope);
+    if (!user || user.id === viewer.id)
+      throw new ForbiddenException(
+        'Chỉ được quản lý nhân viên thuộc khoa/phòng của mình',
+      );
+    const updates: Partial<UserEntity> = {};
+    if (dto.name !== undefined) updates.name = dto.name.trim();
+    if (dto.email !== undefined) {
+      const email = dto.email.trim().toLowerCase();
+      const existing = await this.usersRepository.findOneBy({ email });
+      if (existing && existing.id !== id)
+        throw new ConflictException('Email đã tồn tại');
+      updates.email = email;
+    }
+    if (dto.isActive !== undefined) updates.isActive = dto.isActive;
+    // Keep the scope in the write itself if an admin moves/promotes the target concurrently.
+    const result = await this.usersRepository.update(scope, updates);
+    if (!result.affected)
+      throw new ForbiddenException('Tài khoản không còn thuộc phạm vi quản lý');
+    return this.usersRepository.findOneBy(scope);
   }
 
   findOne(id: number) {

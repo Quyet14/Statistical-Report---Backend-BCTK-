@@ -6,6 +6,8 @@ import {
   Param,
   Patch,
   Post,
+  Req,
+  ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -14,6 +16,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import type { AuthenticatedUser } from '../common/guards/jwt-auth.guard';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -21,13 +24,22 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  findAll() {
-    return this.usersService.findAll();
+  findAll(@Req() req: { user: AuthenticatedUser }) {
+    return this.usersService.findVisible(req.user);
+  }
+
+  @Get('managed')
+  @Roles('admin', 'manager')
+  findManaged(@Req() req: { user: AuthenticatedUser }) {
+    return this.usersService.findManaged(req.user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.usersService.findOne(+id);
+  findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: { user: AuthenticatedUser },
+  ) {
+    return this.usersService.findVisibleOne(id, req.user);
   }
 
   @Post()
@@ -37,9 +49,15 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles('admin')
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(+id, dto);
+  @Roles('admin', 'manager')
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateUserDto,
+    @Req() req: { user: AuthenticatedUser },
+  ) {
+    return req.user.role === 'admin'
+      ? this.usersService.update(id, dto)
+      : this.usersService.updateInDepartment(id, dto, req.user);
   }
 
   @Delete(':id')
