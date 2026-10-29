@@ -1,4 +1,6 @@
 import {
+  IsInt,
+  Min,
   IsBoolean,
   IsEmail,
   IsEnum,
@@ -26,9 +28,13 @@ export class UpdateUserDto {
   role?: 'admin' | 'manager' | 'staff';
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
   branchId?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
   departmentId?: number;
 
   @IsOptional()

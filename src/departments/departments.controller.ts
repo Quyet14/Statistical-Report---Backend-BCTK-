@@ -1,4 +1,8 @@
 import {
+  CreateDepartmentDto,
+  UpdateDepartmentDto,
+} from '../common/dto/organization.dto';
+import {
   Body,
   Controller,
   Delete,
@@ -31,16 +35,13 @@ export class DepartmentsController {
 
   @Post()
   @Roles('admin')
-  create(@Body() dto: { name: string; branchId?: number }) {
+  create(@Body() dto: CreateDepartmentDto) {
     return this.departmentsService.create(dto);
   }
 
   @Patch(':id')
   @Roles('admin')
-  update(
-    @Param('id') id: string,
-    @Body() dto: { name?: string; branchId?: number },
-  ) {
+  update(@Param('id') id: string, @Body() dto: UpdateDepartmentDto) {
     return this.departmentsService.update(+id, dto);
   }
 

@@ -1,10 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class EmailService {
-  private readonly logger = new Logger(EmailService.name);
-
   async sendOtpEmail(to: string, otp: string): Promise<void> {
     const host = process.env.SMTP_HOST;
     const port = Number(process.env.SMTP_PORT || 587);
@@ -13,19 +11,17 @@ export class EmailService {
     const from = process.env.SMTP_FROM || 'no-reply@bctk.local';
     const secure = process.env.SMTP_SECURE === 'true' || Number(port) === 465;
 
-    if (process.env.OTP_ENABLED === 'false') {
-      return;
-    }
-
-    if (!host || !user || !pass) {
-      this.logger.log(`OTP demo email for ${to}: ${otp}`);
-      return;
+    if (process.env.OTP_ENABLED === 'false' || !host || !user || !pass) {
+      throw new ServiceUnavailableException(
+        'OTP email delivery is unavailable',
+      );
     }
 
     const transporter = nodemailer.createTransport({
       host,
       port,
       secure,
+      requireTLS: !secure,
       auth: {
         user,
         pass,

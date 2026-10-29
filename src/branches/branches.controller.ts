@@ -1,7 +1,23 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  CreateBranchDto,
+  UpdateBranchDto,
+} from '../common/dto/organization.dto';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { BranchesService } from './branches.service';
 
 @Controller('branches')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class BranchesController {
   constructor(private readonly branchesService: BranchesService) {}
 
@@ -16,12 +32,14 @@ export class BranchesController {
   }
 
   @Post()
-  create(@Body() dto: { name: string }) {
+  @Roles('admin')
+  create(@Body() dto: CreateBranchDto) {
     return this.branchesService.create(dto);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: { name?: string }) {
+  @Roles('admin')
+  update(@Param('id') id: string, @Body() dto: UpdateBranchDto) {
     return this.branchesService.update(+id, dto);
   }
 }

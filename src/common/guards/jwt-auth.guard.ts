@@ -7,6 +7,9 @@ import {
 import * as jwt from 'jsonwebtoken';
 import { DataSource } from 'typeorm';
 import { UserEntity } from '../../users/entities/user.entity';
+import { jwtSecret } from '../security-config';
+import { RefreshSessions } from '../refresh-sessions';
+import { TrustedDevices } from '../trusted-devices';
 
 export type AuthenticatedUser = {
   id: number;
@@ -34,11 +37,13 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const verified = jwt.verify(
         authorization.replace(/^Bearer\s+/i, ''),
-        process.env.JWT_SECRET || 'bctk-super-secret-key',
+        jwtSecret(),
+        { algorithms: ['HS256'] },
       );
       if (
         typeof verified === 'string' ||
-        verified.type === 'refresh' ||
+        verified.type !== 'access' ||
+        typeof verified.exp !== 'number' ||
         !Number.isInteger(Number(verified.sub)) ||
         Number(verified.sub) <= 0
       ) {
@@ -53,8 +58,18 @@ export class JwtAuthGuard implements CanActivate {
     const user = await this.dataSource
       .getRepository(UserEntity)
       .findOneBy({ id: Number(payload.sub) });
-    if (!user || !user.isActive)
+    if (
+      !user ||
+      !user.isActive ||
+      payload.tokenVersion !== (user.tokenVersion ?? 0)
+    )
       throw new UnauthorizedException('Tài khoản không còn hoạt động');
+    if (payload.sid !== undefined) {
+      if (typeof payload.sid !== 'string') throw new UnauthorizedException('Invalid session');
+      const session = await new RefreshSessions().get(payload.sid);
+      if (!session || session.userId !== user.id || session.version !== (user.tokenVersion ?? 0)) throw new UnauthorizedException('Phiên đăng nhập đã hết hạn');
+      if (session.deviceId) { const device = await new TrustedDevices().get(session.deviceId); if (!device || device.userId !== user.id || device.version !== (user.tokenVersion ?? 0)) throw new UnauthorizedException('Thiết bị không còn được ghi nhớ'); }
+    }
     req.user = {
       id: user.id,
       sub: user.id,

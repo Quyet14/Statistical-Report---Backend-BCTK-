@@ -1,4 +1,6 @@
 import {
+  IsInt,
+  Min,
   IsEmail,
   IsEnum,
   IsOptional,
@@ -22,8 +24,12 @@ export class CreateUserDto {
   role?: 'admin' | 'manager' | 'staff';
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
   branchId?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
   departmentId?: number;
 }

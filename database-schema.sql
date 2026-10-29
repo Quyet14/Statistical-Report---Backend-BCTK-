@@ -30,11 +30,11 @@ CREATE TABLE branches (
 CREATE TABLE otp_tokens (
   id INT PRIMARY KEY AUTO_INCREMENT,
   email VARCHAR(255) NOT NULL,
-  otp VARCHAR(10) NOT NULL,
+  otp VARCHAR(64) NOT NULL,
   purpose ENUM('login', 'reset-password') NOT NULL DEFAULT 'login',
   expiresAt DATETIME NOT NULL,
   createdAt DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_otp_email_purpose (email, purpose)
+  UNIQUE KEY UQ_otp_email_purpose (email, purpose)
 );
 
 CREATE TABLE departments (

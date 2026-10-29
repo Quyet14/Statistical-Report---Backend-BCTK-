@@ -23,9 +23,14 @@ describe('Current permissions and KPI isolation (HTTP)', () => {
     { id: 2, assigneeId: 3, status: 'doing' },
     { id: 3, assigneeId: 4, status: 'done' },
   ];
-  const secret = process.env.JWT_SECRET || 'bctk-super-secret-key';
+  const secret = 'test-only-secret-with-at-least-32-bytes';
+  process.env.JWT_SECRET = secret;
   const token = (id: number, role: string, departmentId: number | null = 10) =>
-    jwt.sign({ sub: id, role, departmentId }, secret);
+    jwt.sign(
+      { sub: id, role, departmentId, type: 'access', tokenVersion: 0 },
+      secret,
+      { expiresIn: '15m' },
+    );
   const bearer = (id: number, role: string, departmentId: number | null = 10) =>
     `Bearer ${token(id, role, departmentId)}`;
   let findUsers: jest.Mock;

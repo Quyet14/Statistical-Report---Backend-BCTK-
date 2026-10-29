@@ -1,3 +1,5 @@
+import { plainToInstance } from 'class-transformer';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { INestApplication } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
@@ -18,9 +20,10 @@ describe('Department employee management permissions (HTTP)', () => {
   let people: Array<Record<string, any>>;
   let repository: Record<string, jest.Mock>;
   let beforeUpdate: (() => void) | null;
-  const secret = process.env.JWT_SECRET || 'bctk-super-secret-key';
+  const secret = 'test-only-secret-with-at-least-32-bytes';
+  process.env.JWT_SECRET = secret;
   const bearer = (id: number, role = 'admin', departmentId = 999) =>
-    `Bearer ${jwt.sign({ sub: id, role, departmentId }, secret)}`;
+    `Bearer ${jwt.sign({ sub: id, role, departmentId, type: 'access', tokenVersion: 0 }, secret, { expiresIn: '15m' })}`;
   const matches = (row, where = {}) =>
     Object.entries(where).every(([key, value]) => row[key] === value);
 
@@ -106,7 +109,8 @@ describe('Department employee management permissions (HTTP)', () => {
         beforeUpdate?.();
         const row = people.find((person) => matches(person, where));
         if (!row) return { affected: 0 };
-        Object.assign(row, data);
+        const version = typeof data.tokenVersion === 'function' ? (row.tokenVersion ?? 0) + 1 : data.tokenVersion;
+        Object.assign(row, data, version !== undefined ? { tokenVersion: version } : {});
         return { affected: 1 };
       }),
       create: jest.fn((data) => data),
@@ -177,6 +181,55 @@ describe('Department employee management permissions (HTTP)', () => {
       .set('Authorization', bearer(2))
       .expect(200);
     expect(response.body.map((row) => row.id)).toEqual([3, 7]);
+  });
+  it('accepts manager DTO instances with omitted privileged fields', async () => {
+    const service = app.get(UsersService);
+    const viewer = {
+      id: 2,
+      sub: 2,
+      name: 'Head A',
+      email: 'head@example.test',
+      role: 'manager' as const,
+      departmentId: 10,
+    };
+    const updated = await service.updateInDepartment(
+      3,
+      plainToInstance(UpdateUserDto, { isActive: false }),
+      viewer,
+    );
+    expect(updated?.isActive).toBe(false);
+    expect(updated?.role).toBe('staff');
+    await expect(
+      service.updateInDepartment(
+        3,
+        plainToInstance(UpdateUserDto, { role: 'admin' }),
+        viewer,
+      ),
+    ).rejects.toThrow();
+  });
+  it('revokes tokens and device versions permanently when admin disables then re-enables an account', async () => {
+    const service = app.get(UsersService);
+    await service.update(3, plainToInstance(UpdateUserDto, { isActive: false }));
+    await service.update(3, plainToInstance(UpdateUserDto, { isActive: true }));
+    expect((await service.findOne(3))?.tokenVersion).toBe(1);
+    await request(app.getHttpServer()).get('/api/users/3').set('Authorization', bearer(3)).expect(401);
+  });
+  it('department-head disabling also increments the revocation version atomically', async () => {
+    const service = app.get(UsersService);
+    const viewer = { id: 2, sub: 2, name: 'Head', email: 'head@example.test', role: 'manager' as const, departmentId: 10 };
+    await service.updateInDepartment(3, plainToInstance(UpdateUserDto, { isActive: false }), viewer);
+    await service.updateInDepartment(3, plainToInstance(UpdateUserDto, { isActive: true }), viewer);
+    expect((await service.findOne(3))?.tokenVersion).toBe(1);
+    await request(app.getHttpServer()).get('/api/users/3').set('Authorization', bearer(3)).expect(401);
+  });
+  it('preserves omitted account properties when admin edits a DTO instance', async () => {
+    const updated = await app
+      .get(UsersService)
+      .update(3, plainToInstance(UpdateUserDto, { name: 'Updated name' }));
+    expect(updated?.name).toBe('Updated name');
+    expect(updated?.role).toBe('staff');
+    expect(updated?.email).toBe('a@example.test');
+    expect(updated?.isActive).toBe(true);
   });
   it('returns all accounts to admin', async () => {
     const response = await request(app.getHttpServer())
@@ -376,5 +429,44 @@ describe('Department employee management permissions (HTTP)', () => {
       .delete('/api/departments/10')
       .set('Authorization', bearer(1))
       .expect(200);
+  });
+  it.each([
+    { type: 'refresh', tokenVersion: 0, expiresIn: '15m' },
+    { type: 'access', tokenVersion: 0, expiresIn: '-1s' },
+    { type: 'access', tokenVersion: 10, expiresIn: '15m' },
+  ])(
+    'rejects unusable session tokens: %j',
+    async ({ type, tokenVersion, expiresIn }) => {
+      const token = jwt.sign({ sub: 1, type, tokenVersion }, secret, {
+        expiresIn: expiresIn as any,
+      });
+      await request(app.getHttpServer())
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer ' + token)
+        .expect(401);
+    },
+  );
+
+  it('rejects access tokens without expiry', async () => {
+    const token = jwt.sign({ sub: 1, type: 'access', tokenVersion: 0 }, secret);
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(401);
+  });
+
+  it('does not return password hashes and invalidates old sessions after a password change', async () => {
+    const oldToken = bearer(3);
+    const response = await request(app.getHttpServer())
+      .patch('/api/users/3')
+      .set('Authorization', bearer(1))
+      .send({ password: 'updated-password' })
+      .expect(200);
+    expect(response.body.password).toBeUndefined();
+    expect(people.find((person) => person.id === 3)!.password).toMatch(/^\$2/);
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', oldToken)
+      .expect(401);
   });
 });

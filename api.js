@@ -1,12 +1,18 @@
-const API_BASE_URL = 'http://localhost:3010';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3010';
+if (
+  process.env.NODE_ENV === 'production' &&
+  new URL(API_BASE_URL).protocol !== 'https:'
+) {
+  throw new Error('API_BASE_URL must use HTTPS in production');
+}
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
-    ...options,
   });
 
   const data = await response.json().catch(() => ({}));
@@ -90,18 +96,3 @@ const api = {
 };
 
 module.exports = api;
-
-// Example usage:
-// const api = require('./api');
-//
-// api.login('admin@example.com', '123456')
-//   .then(console.log)
-//   .catch(console.error);
-//
-// api.verifyLoginOtp('admin@example.com', '456520')
-//   .then((res) => {
-//     console.log(res);
-//     localStorage.setItem('accessToken', res.accessToken);
-//     localStorage.setItem('refreshToken', res.refreshToken);
-//   })
-//   .catch(console.error);

@@ -12,10 +12,14 @@ import { TaskLogsModule } from './task-logs/task-logs.module';
 import { TasksModule } from './tasks/tasks.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { validateSecurityEnvironment } from './common/security-config';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateSecurityEnvironment,
+    }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -29,7 +33,7 @@ import { NotificationsModule } from './notifications/notifications.module';
           configService.get<string>('DB_DATABASE') ??
           configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true,
+        synchronize: configService.get<string>('DB_SYNCHRONIZE') === 'true',
         logging: false,
       }),
     }),

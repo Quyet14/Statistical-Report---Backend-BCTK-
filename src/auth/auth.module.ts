@@ -4,6 +4,8 @@ import { DataSource } from 'typeorm';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { RefreshSessions } from '../common/refresh-sessions';
+import { TrustedDevices } from '../common/trusted-devices';
 import { EmailService } from './email.service';
 import { OtpTokenEntity } from './entities/otp-token.entity';
 
@@ -12,6 +14,8 @@ import { OtpTokenEntity } from './entities/otp-token.entity';
   controllers: [AuthController],
   providers: [
     AuthService,
+    RefreshSessions,
+    TrustedDevices,
     EmailService,
     {
       provide: 'OTP_TOKEN_REPOSITORY',

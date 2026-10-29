@@ -38,6 +38,9 @@ export class UserEntity {
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
+  @Column({ type: 'int', default: 0 })
+  tokenVersion: number;
+
   @CreateDateColumn({ type: 'datetime', nullable: true })
   createdAt?: Date;
 

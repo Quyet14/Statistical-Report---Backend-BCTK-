@@ -96,7 +96,9 @@ export class UsersService implements OnModuleInit {
   ) {
     if (viewer.role !== 'manager' || viewer.departmentId == null)
       throw new ForbiddenException('Bạn không có quyền quản lý tài khoản này');
-    const keys = Object.keys(dto);
+    if (!dto || typeof dto !== 'object' || Array.isArray(dto))
+      throw new BadRequestException('Invalid update');
+    const keys = Object.keys(dto).filter((key) => dto[key] !== undefined);
     if (keys.some((key) => !['name', 'email', 'isActive'].includes(key)))
       throw new ForbiddenException(
         'Trưởng khoa chỉ được sửa họ tên, email và trạng thái nhân viên',
@@ -126,7 +128,7 @@ export class UsersService implements OnModuleInit {
       throw new ForbiddenException(
         'Chỉ được quản lý nhân viên thuộc khoa/phòng của mình',
       );
-    const updates: Partial<UserEntity> = {};
+    const updates: Partial<Omit<UserEntity, 'tokenVersion'>> & { tokenVersion?: () => string } = {};
     if (dto.name !== undefined) updates.name = dto.name.trim();
     if (dto.email !== undefined) {
       const email = dto.email.trim().toLowerCase();
@@ -136,6 +138,7 @@ export class UsersService implements OnModuleInit {
       updates.email = email;
     }
     if (dto.isActive !== undefined) updates.isActive = dto.isActive;
+    if (dto.isActive === false) updates.tokenVersion = () => 'COALESCE(tokenVersion, 0) + 1';
     // Keep the scope in the write itself if an admin moves/promotes the target concurrently.
     const result = await this.usersRepository.update(scope, updates);
     if (!result.affected)
@@ -169,7 +172,9 @@ export class UsersService implements OnModuleInit {
       departmentId: dto.departmentId,
     });
 
-    return this.usersRepository.save(newUser);
+    const saved = await this.usersRepository.save(newUser);
+    const { password: _password, ...safeUser } = saved;
+    return safeUser;
   }
 
   async update(id: number, dto: UpdateUserDto) {
@@ -183,18 +188,26 @@ export class UsersService implements OnModuleInit {
 
     Object.assign(
       user,
-      dto,
+      Object.fromEntries(
+        Object.entries(dto).filter(([, value]) => value !== undefined),
+      ),
       dto.email ? { email: dto.email.toLowerCase() } : {},
       dto.password ? { password: await bcrypt.hash(dto.password, 12) } : {},
     );
-    return this.usersRepository.save(user);
+    if (dto.password || dto.isActive === false) user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+    const saved = await this.usersRepository.save(user);
+    const { password: _password, ...safeUser } = saved;
+    return safeUser;
   }
 
   async updatePassword(email: string, newPassword: string) {
     const user = await this.findByEmail(email);
     if (!user) return null;
     user.password = await bcrypt.hash(newPassword, 12);
-    return this.usersRepository.save(user);
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+    const saved = await this.usersRepository.save(user);
+    const { password: _password, ...safeUser } = saved;
+    return safeUser;
   }
 
   async remove(id: number) {

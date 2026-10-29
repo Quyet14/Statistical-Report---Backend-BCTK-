@@ -8,3 +8,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 coverage/
+.npm-cache/
+
+deploy/backups/
+
+/dist-device-release/
